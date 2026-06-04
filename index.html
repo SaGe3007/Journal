@@ -273,12 +273,19 @@
     let questsData = [];
     let activeQuestId = null;
 
-    // ---------- ФУНКЦИИ РАБОТЫ С ДАННЫМИ ----------
+    // ---------- ФУНКЦИИ РАБОТЫ С ДАННЫМИ (с гарантией children) ----------
+    function ensureChildren(node) {
+        if (!node.children || !Array.isArray(node.children)) {
+            node.children = [];
+        }
+        return node;
+    }
+
     function findNodeById(nodes, targetId) {
         for (let i = 0; i < nodes.length; i++) {
-            const node = nodes[i];
+            const node = ensureChildren(nodes[i]);
             if (node.id === targetId) return { node, parent: null, index: i };
-            if (node.children && node.children.length) {
+            if (node.children.length) {
                 const deep = findNodeById(node.children, targetId);
                 if (deep) {
                     deep.parent = node;
@@ -295,7 +302,8 @@
                 nodes.splice(i, 1);
                 return true;
             }
-            if (nodes[i].children && deleteNodeById(nodes[i].children, targetId)) return true;
+            const node = ensureChildren(nodes[i]);
+            if (node.children.length && deleteNodeById(node.children, targetId)) return true;
         }
         return false;
     }
@@ -320,7 +328,11 @@
 
     function addSubQuest(parentId, subTitle, subDesc = "") {
         const found = findNodeById(questsData, parentId);
-        if (!found || !found.node) return null;
+        if (!found || !found.node) {
+            alert("Родительский квест не найден");
+            return null;
+        }
+        const parent = ensureChildren(found.node);
         const newId = `${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
         const newQuest = {
             id: newId,
@@ -328,7 +340,7 @@
             description: subDesc,
             children: []
         };
-        found.node.children.push(newQuest);
+        parent.children.push(newQuest);
         return newId;
     }
 
@@ -367,10 +379,10 @@
         if (!nodes.length) return '';
         let html = '';
         for (const node of nodes) {
+            ensureChildren(node);
             const isActive = (activeQuestId === node.id);
             const safeTitle = escapeHtml(node.title);
             const activeClass = isActive ? 'active' : '';
-            // Кнопки теперь есть у каждого квеста всегда
             const buttonsHtml = `
                 <div class="action-buttons">
                     <button class="action-icon edit-name-btn" data-id="${node.id}" title="Редактировать название">✏️</button>
@@ -385,7 +397,7 @@
                         ${buttonsHtml}
                     </div>
             `;
-            if (node.children && node.children.length > 0) {
+            if (node.children.length > 0) {
                 html += `<div class="children">${buildTreeHTML(node.children)}</div>`;
             }
             html += `</div>`;
@@ -481,8 +493,6 @@
                 saveToFirebase();
                 renderLeftPanel();
                 renderRightPanel();
-            } else {
-                alert('Ошибка: не удалось найти родительский квест');
             }
             return;
         }
@@ -533,7 +543,7 @@
     // ---------- ЗАГРУЗКА ИЗ FIREBASE ----------
     function init() {
         questsRef.on('value', (snapshot) => {
-            const data = snapshot.val();
+            let data = snapshot.val();
             if (data && Array.isArray(data)) {
                 questsData = data;
             } else if (data && typeof data === 'object') {
@@ -541,6 +551,14 @@
             } else {
                 questsData = [];
             }
+            // Гарантируем, что у каждого квеста есть children
+            function fixChildren(arr) {
+                for (let item of arr) {
+                    if (!item.children) item.children = [];
+                    if (item.children.length) fixChildren(item.children);
+                }
+            }
+            fixChildren(questsData);
             renderLeftPanel();
             renderRightPanel();
         }, (error) => {
