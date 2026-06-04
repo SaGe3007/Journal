@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Журнал квестов</title>
     <style>
-        /* Здесь ВЕСЬ ваш старый CSS (без изменений) */
         * {
             margin: 0;
             padding: 0;
@@ -100,7 +99,6 @@
         }
         .quest-node {
             margin: 0.2rem 0;
-            user-select: none;
         }
         .node-row {
             display: flex;
@@ -132,7 +130,7 @@
             word-break: break-word;
             flex: 1;
         }
-        .active-buttons {
+        .action-buttons {
             display: flex;
             gap: 8px;
             align-items: center;
@@ -230,7 +228,6 @@
             .action-icon { font-size: 0.8rem; padding: 0.1rem 0.4rem; }
         }
     </style>
-    <!-- Подключаем Firebase Compat SDK (старая версия, совместимая с вашим стилем кода) -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
@@ -258,8 +255,7 @@
 </div>
 
 <script>
-    // ---------- ИНИЦИАЛИЗАЦИЯ FIREBASE ----------
-    // Ваш конфиг (скопированный из консоли)
+    // ---------- FIREBASE ----------
     const firebaseConfig = {
         apiKey: "AIzaSyCq-1SvNa1cwwzDZHaokstuuPmqOQS1aWA",
         authDomain: "journy-7f574.firebaseapp.com",
@@ -268,30 +264,26 @@
         messagingSenderId: "136377049833",
         appId: "1:136377049833:web:b0ea0f03b87ced28328678",
         measurementId: "G-5052T8DMHN",
-        // Для Realtime Database нужно добавить URL базы данных (обычно формируется автоматически)
         databaseURL: "https://journy-7f574-default-rtdb.firebaseio.com"
     };
-
-    // Инициализируем Firebase
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
-    const questsRef = database.ref('quests');   // ключ 'quests' в базе данных
+    const questsRef = database.ref('quests');
 
-    // ---------- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ----------
-    const MAX_DEPTH = 5;
-    let questsData = [];      // будет заполняться из Firebase
+    let questsData = [];
     let activeQuestId = null;
 
-    // ---------- ФУНКЦИИ РАБОТЫ С ДАННЫМИ (те же, что у вас были) ----------
-    function findNodeById(nodes, targetId, parent = null) {
+    // ---------- ФУНКЦИИ РАБОТЫ С ДАННЫМИ ----------
+    function findNodeById(nodes, targetId) {
         for (let i = 0; i < nodes.length; i++) {
             const node = nodes[i];
-            if (node.id === targetId) {
-                return { node, parent, index: i };
-            }
+            if (node.id === targetId) return { node, parent: null, index: i };
             if (node.children && node.children.length) {
-                const deep = findNodeById(node.children, targetId, node);
-                if (deep) return deep;
+                const deep = findNodeById(node.children, targetId);
+                if (deep) {
+                    deep.parent = node;
+                    return deep;
+                }
             }
         }
         return null;
@@ -326,25 +318,9 @@
         return false;
     }
 
-    function getNodeDepth(nodeId, nodes, currentDepth = 1) {
-        for (const node of nodes) {
-            if (node.id === nodeId) return currentDepth;
-            if (node.children.length) {
-                const d = getNodeDepth(nodeId, node.children, currentDepth + 1);
-                if (d) return d;
-            }
-        }
-        return null;
-    }
-
     function addSubQuest(parentId, subTitle, subDesc = "") {
         const found = findNodeById(questsData, parentId);
         if (!found || !found.node) return null;
-        const parentDepth = getNodeDepth(parentId, questsData, 1);
-        if (parentDepth !== null && parentDepth >= MAX_DEPTH) {
-            alert(`Нельзя добавить подзадачу: достигнут лимит вложенности (${MAX_DEPTH} уровней).`);
-            return null;
-        }
         const newId = `${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
         const newQuest = {
             id: newId,
@@ -371,11 +347,11 @@
     function saveToFirebase() {
         questsRef.set(questsData).catch(error => {
             console.error("Ошибка сохранения: ", error);
-            alert("Не удалось сохранить данные. Проверьте подключение и правила БД.");
+            alert("Не удалось сохранить данные. Проверьте консоль и правила БД.");
         });
     }
 
-    // ---------- РЕНДЕР ИНТЕРФЕЙСА (почти без изменений) ----------
+    // ---------- РЕНДЕР (кнопки у каждого квеста) ----------
     function renderLeftPanel() {
         const container = document.getElementById('questTreeContainer');
         if (!container) return;
@@ -383,34 +359,34 @@
             container.innerHTML = `<div style="padding: 1.5rem; text-align:center; color:#b9aa83;">📭 Нет квестов. Создайте первый ➕</div>`;
             return;
         }
-        const treeHtml = buildTreeHTML(questsData, 1);
+        const treeHtml = buildTreeHTML(questsData);
         container.innerHTML = treeHtml;
     }
 
-    function buildTreeHTML(nodes, currentDepth) {
+    function buildTreeHTML(nodes) {
         if (!nodes.length) return '';
         let html = '';
         for (const node of nodes) {
             const isActive = (activeQuestId === node.id);
             const safeTitle = escapeHtml(node.title);
             const activeClass = isActive ? 'active' : '';
-            const buttonsHtml = isActive ? `
-                <div class="active-buttons">
+            // Кнопки теперь есть у каждого квеста всегда
+            const buttonsHtml = `
+                <div class="action-buttons">
                     <button class="action-icon edit-name-btn" data-id="${node.id}" title="Редактировать название">✏️</button>
                     <button class="action-icon add-sub-btn" data-id="${node.id}" title="Добавить подзадачу">➕</button>
                     <button class="action-icon delete-icon" data-id="${node.id}" title="Удалить квест">🗑️</button>
                 </div>
-            ` : '';
-
+            `;
             html += `
-                <div class="quest-node" data-depth="${currentDepth}">
+                <div class="quest-node">
                     <div class="node-row ${activeClass}" data-id="${node.id}">
                         <span class="quest-name">${safeTitle}</span>
                         ${buttonsHtml}
                     </div>
             `;
             if (node.children && node.children.length > 0) {
-                html += `<div class="children">${buildTreeHTML(node.children, currentDepth + 1)}</div>`;
+                html += `<div class="children">${buildTreeHTML(node.children)}</div>`;
             }
             html += `</div>`;
         }
@@ -450,12 +426,13 @@
         if (!textarea) return;
         const newDesc = textarea.value;
         updateNodeDescription(activeQuestId, newDesc);
-        saveToFirebase();               // ← сохраняем в Firebase
-        renderRightPanel();             // обновим заголовок (имя не меняется, но описание обновим)
+        saveToFirebase();
+        renderRightPanel();
     }
 
-    // ---------- ОБРАБОТЧИКИ СОБЫТИЙ (с добавлением saveToFirebase) ----------
+    // ---------- ОБРАБОТЧИКИ ----------
     function handleLeftPanelClick(e) {
+        // Выделение квеста при клике на строку (не на кнопку)
         const nodeRow = e.target.closest('.node-row');
         if (nodeRow && !e.target.closest('.action-icon')) {
             const questId = nodeRow.getAttribute('data-id');
@@ -467,6 +444,7 @@
             return;
         }
 
+        // Редактирование названия
         const editBtn = e.target.closest('.edit-name-btn');
         if (editBtn) {
             const id = editBtn.getAttribute('data-id');
@@ -476,7 +454,7 @@
                     let newTitle = prompt('Редактирование названия:', found.node.title);
                     if (newTitle !== null && newTitle.trim() !== '') {
                         updateNodeTitle(id, newTitle);
-                        saveToFirebase();               // ← сохранить
+                        saveToFirebase();
                         renderLeftPanel();
                         if (activeQuestId === id) renderRightPanel();
                     } else if (newTitle !== null && newTitle.trim() === '') {
@@ -487,15 +465,11 @@
             return;
         }
 
+        // Добавление подзадачи (без ограничения глубины)
         const addSubBtn = e.target.closest('.add-sub-btn');
         if (addSubBtn) {
             const parentId = addSubBtn.getAttribute('data-id');
             if (!parentId) return;
-            const depth = getNodeDepth(parentId, questsData, 1);
-            if (depth !== null && depth >= MAX_DEPTH) {
-                alert(`Нельзя добавить подзадачу: максимальный уровень вложенности ${MAX_DEPTH}`);
-                return;
-            }
             let subTitle = prompt('Название подзадачи:', 'Новое задание');
             if (subTitle === null) return;
             if (subTitle.trim() === '') subTitle = 'Новая задача';
@@ -504,13 +478,16 @@
             const newSubId = addSubQuest(parentId, subTitle, subDesc);
             if (newSubId) {
                 activeQuestId = newSubId;
-                saveToFirebase();               // ← сохранить
+                saveToFirebase();
                 renderLeftPanel();
                 renderRightPanel();
+            } else {
+                alert('Ошибка: не удалось найти родительский квест');
             }
             return;
         }
 
+        // Удаление квеста
         const delBtn = e.target.closest('.delete-icon');
         if (delBtn) {
             const id = delBtn.getAttribute('data-id');
@@ -520,7 +497,7 @@
                     if (confirm(`Удалить квест "${found.node.title}" и все его подзадачи?`)) {
                         deleteNodeById(questsData, id);
                         if (activeQuestId === id) activeQuestId = null;
-                        saveToFirebase();               // ← сохранить
+                        saveToFirebase();
                         renderLeftPanel();
                         renderRightPanel();
                     }
@@ -538,7 +515,7 @@
         if (desc === null) desc = '';
         const newId = addRootQuest(title, desc);
         activeQuestId = newId;
-        saveToFirebase();               // ← сохранить
+        saveToFirebase();
         renderLeftPanel();
         renderRightPanel();
     }
@@ -553,15 +530,13 @@
         });
     }
 
-    // ---------- ЗАГРУЗКА ДАННЫХ ИЗ FIREBASE ПРИ СТАРТЕ ----------
+    // ---------- ЗАГРУЗКА ИЗ FIREBASE ----------
     function init() {
-        // Подписываемся на изменения базы данных (один раз)
         questsRef.on('value', (snapshot) => {
             const data = snapshot.val();
             if (data && Array.isArray(data)) {
                 questsData = data;
             } else if (data && typeof data === 'object') {
-                // если Firebase почему-то сохранил как объект, преобразуем
                 questsData = Object.values(data);
             } else {
                 questsData = [];
